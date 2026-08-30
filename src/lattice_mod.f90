@@ -1,3 +1,6 @@
+!
+! gfortran -c -ffree-line-length-none lattice_mod.f90
+!
 module lattice_mod
     use iso_fortran_env, only: dp => real64
     implicit none
@@ -71,13 +74,18 @@ module lattice_mod
         type(Bond)    , allocatable :: bonds(:)
         integer                     :: nbonds
 
-        contains
-            procedure :: siteindx_from_cellindx
-            procedure :: siteindx_from_cellcoords
-            procedure :: cellindx_from_siteindx
-            procedure :: cellindx_from_coords
-            procedure :: cell_displacement
-            procedure :: add_bond
+    contains
+        procedure :: siteindx_from_cellindx
+        procedure :: siteindx_from_cellcoords
+        procedure :: cellindx_from_siteindx
+        procedure :: cellindx_from_coords
+        procedure :: cell_coordinatess_from_indx
+
+        procedure :: cell_indx_displacement
+        procedure :: cell_displacement => cell_coordinate_displacement
+
+        procedure :: add_bond
+        procedure :: site_indx_displacement
     endtype Lattice
 
 
@@ -129,7 +137,7 @@ module lattice_mod
                 integer :: rfrom(self%dim)
                 integer :: rto(self%dim)
 
-                rfrom = self%cellcoords_from_indx(indxfrom)
+                rfrom = self%cell_coordinatess_from_indx(indxfrom)
 
                 call self%cell_displacement(rfrom, dr, rto, in_lattice)
 
@@ -162,7 +170,22 @@ module lattice_mod
                     endif
                 enddo
             endassociate
-        endsubroutine cell_displacement
+        endsubroutine cell_coordinate_displacement
+
+        function cell_coordinatess_from_indx(self, cellindx) result(r)
+            class(Lattice), intent(in) :: self
+            integer, intent(in) :: cellindx
+
+            integer :: r(self%dim)
+            integer :: i, n
+
+            n = cellindx - 1
+
+            do i = 1, self%dim
+                r(i) = modulo(n, self%L(i))
+                n = n / self%L(i)
+            enddo
+        endfunction cell_coordinatess_from_indx
 
 
 
