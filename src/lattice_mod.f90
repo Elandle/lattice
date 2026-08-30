@@ -7,26 +7,6 @@ module lattice_mod
 
     real(dp), parameter :: pi = 4.0_dp * atan(1.0_dp)
 
-
-    ! Lattice indexing strategy:
-    !
-    ! Index unit cells.
-    ! Take a 3d lattice for concreteness.
-    ! L = [L1, L2, L3]
-    ! Indices range n1 = 0, 1, ..., L1
-    !               n1 = 0, 1, ..., L2
-    !               n1 = 0, 1, ..., L3
-    !
-    ! Start at (n1, n2, n3) = (0, 0, 0)
-    ! (0, 0, 0) --> 1
-    ! (1, 0, 0) --> 2
-    ! (2, 0, 0) --> 3
-    ! .
-    ! .
-    ! (L1-1, 0, 0) --> L1-1
-    ! 
-    !
-
     type :: UnitCell
         integer  :: dim       ! Dimension of unit cell
         integer  :: norbitals ! Number of orbitals in the unit cell
@@ -92,12 +72,17 @@ module lattice_mod
 
     contains
 
+        !> Adds a bond to the lattice.
+        !!
+        !! @param[in,out] self Lattice to add a bond to.
+        !! @param[in]     B    Bond to add to lattice.
         subroutine add_bond(self, B)
             class(Lattice), intent(inout) :: self
             type(Bond)    , intent(in)    :: B
 
             type(Bond), allocatable :: temp(:)
 
+            ! Never added a bond before? If so, get things ready and add this new bond.
             if (.not. allocated(self%bonds)) then
                 allocate(self%bonds(1))
                 self%bonds(1) = B
@@ -105,8 +90,9 @@ module lattice_mod
                 return
             endif
 
+            ! Add space for 1 more bond and put this new bond there.
             allocate(temp(self%nbonds+1))
-            temp(1:self%nbonds) = self%bonds
+            temp(1:self%nbonds)   = self%bonds
             temp(self%nbonds + 1) = B
             call move_alloc(temp, self%bonds)
             self%nbonds = self%nbonds + 1
