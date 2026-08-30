@@ -68,7 +68,9 @@ module lattice_mod
         procedure :: site_indx_displacement
     endtype Lattice
 
-
+    interface append_column
+        module procedure :: append_column_dp
+    endinterface append_column
 
     contains
 
@@ -300,6 +302,10 @@ module lattice_mod
             endassociate
         endfunction lattice_vector
 
+        !> Get the `i`th reciprocal lattice vector of the unit cell.
+        !!
+        !! @param[in] self Unit cell to get reciprocal lattice vector of.
+        !! @param[in] i index of reciprocal lattice vector to get.
         function reciprocal_vector(self, i) result(b)
             class(UnitCell), intent(in) :: self
             integer        , intent(in) :: i
@@ -313,18 +319,29 @@ module lattice_mod
             endassociate
         endfunction reciprocal_vector
 
-        subroutine add_orbital(self, position)
+        !> Adds an orbital to the unit cell at the specified position.
+        !!
+        !! The position vector @c r should be written in terms of the lattice vectors, with each entry `0 <= r(i) <= 1`.
+        !! Within a unit cell, orbitals are added in increasing index. That is, the first orbital added will have
+        !! index 1, the second index 2, and so on.
+        !!
+        !! @param[in,out] self Unit cell to add an orbital to.
+        !! @param[in]     r position of orbital in unit cell.
+        subroutine add_orbital(self, r)
             class(UnitCell), intent(inout) :: self
-            real(dp)       , intent(in)    :: position(:)
+            real(dp)       , intent(in)    :: r(:)
 
             associate (dim => self%dim, norbitals => self%norbitals)
                 ! Make sure the dimension of position matches the dimension of the UnitCell.
-                if (size(position) .ne. dim) stop "error stop in procedure add_orbital from module lattice_mod: mismatch in UnitCell and input position vector dimension."
-                call append_column(self%orbital_positions, position)
+                if (size(r) .ne. dim) stop "error stop in procedure add_orbital from module lattice_mod: mismatch in UnitCell and input position vector dimension."
+                call append_column(self%orbital_positions, r)
                 norbitals = norbitals + 1
             endassociate
         endsubroutine add_orbital
 
+        !> Rotates a 2-dimensional vector \f$ 90^\circ \f$ clockwise.
+        !!
+        !! @param[in] x vector to rotate.
         function twodim_90degree_rotation(x) result(y)
             real(dp), intent(in) :: x(2)
 
@@ -334,6 +351,10 @@ module lattice_mod
             y(2) = -x(1)
         endfunction twodim_90degree_rotation
 
+        !> Returns the cross product \f$ c = a \times b \f$.
+        !!
+        !! @param[in] a first vector in cross product.
+        !! @param[in] b second vector in cross product.
         function cross_product(a, b) result(c)
             real(dp), intent(in) :: a(3)
             real(dp), intent(in) :: b(3)
@@ -385,8 +406,11 @@ module lattice_mod
             endassociate
         endsubroutine make_reciprocal_vectors
 
-
-        subroutine append_column(A, x)
+        !> Appends a column to the @c real(dp) matrix @p A
+        !!
+        !! @param[in,out] A Matrix to append a column to.
+        !! @param[in]     x Vector to append to @p A.
+        subroutine append_column_dp(A, x)
             real(dp), allocatable, intent(inout) :: A(:, :)
             real(dp),              intent(in)    :: x(:)
 
@@ -399,34 +423,12 @@ module lattice_mod
                 return
             endif
 
-            if (size(A, 1) .ne. size(x)) error stop "error stop in procedure append_column from module lattice_mod: attempting to append a column to a matrix with mismatching number of rows."
+            ! Make sure A and x agree in dimension.
+            if (size(A, 1) .ne. size(x)) error stop "error stop in procedure append_column_dp from module lattice_mod: attempting to append a column to a matrix with mismatching number of rows."
 
             allocate(temp(size(x), size(A, 2) + 1))
-
             temp(:, 1:size(A, 2)  ) = A
             temp(:, size(A, 2) + 1) = x
-
             call move_alloc(temp, A)
-        endsubroutine append_column
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+        endsubroutine append_column_dp
 endmodule lattice_mod
