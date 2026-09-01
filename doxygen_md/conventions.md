@@ -81,3 +81,15 @@ where \f$ R \f$ is the \f$ \pi/2 \f$ clockwise rotation matrix in two dimensions
 \f]
 In all three cases \f$ V \f$ is the signed volume of the unit cell defined by the \f$ \mathbf{a}_i \f$.
 
+The reciprocal lattice is an ordinary lattice with lattice points at all points:
+\f[
+    \mathbf{K} = m_1\mathbf{b}_1 + m_2\mathbf{b}_2 + m_3\mathbf{b}_3
+\f]
+where the \f$ m_i \f$ are integers.
+If \f$ \mathbf{r} \f$ and \f$ \mathbf{k} \f$ are any vectors written in terms of the lattice vectors \f$ \mathbf{a}_i \f$ and \f$ \mathbf{b}_i \f$ respectively, then there is a particularly useful identity:
+\f[
+    \mathbf{r} \cdot \mathbf{k} = (r_1\mathbf{a}_1 + r_2\mathbf{a}_2 + r_3\mathbf{a}_3) \cdot (k_1\mathbf{b}_1 + k_2\mathbf{b}_2 + k_3\mathbf{b}_3) = 2\pi(r_1k_1 + r_2k_2 + r_3k_3)
+\f]
+here the \f$ r_i \f$ and \f$ k_i \f$ are not restricted to be integers.
+
+# k Vectors
