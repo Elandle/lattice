@@ -8,20 +8,20 @@ module lattice_mod
     real(dp), parameter :: pi = 4.0_dp * atan(1.0_dp)
 
     type :: UnitCell
-        integer  :: dim       ! Dimension of unit cell
+        integer  :: dim       ! Dimension of the unit cell
         integer  :: norbitals ! Number of orbitals in the unit cell
-        real(dp) :: V         ! Volume 
+        real(dp) :: V         ! Volume of the unit cell
 
-        real(dp), allocatable :: lattice_vectors(:, :)
-        real(dp), allocatable :: orbital_positions(:, :)
-        real(dp), allocatable :: reciprocal_vectors(:, :)
+        real(dp), allocatable :: lvecs(:, :)   ! Lattice vectors
+        real(dp), allocatable :: orbital_positions(:, :) ! Orbital positions
+        real(dp), allocatable :: rvecs(:, :) ! Reciprocal lattice vectors
 
         contains
-            procedure set_lattice_vector
-            procedure lattice_vector
+            procedure set_lvec
+            procedure lvec
             procedure add_orbital
-            procedure make_reciprocal_vectors
-            procedure reciprocal_vector
+            procedure make_rvecs
+            procedure rvec
     endtype UnitCell
 
     type :: Bond
@@ -55,14 +55,48 @@ module lattice_mod
         integer                     :: nbonds
 
     contains
+        !
+        ! position = Cartestian position
+        ! coordinates = lattice vector coordinates (integers for cells, reals for sites)
+        ! displacement = lattice vector coordinate displacement only using integers,
+        !                goes from unit cell to unit cell (eg, site + displacement means
+        !                find the unit cell the site is in and displace to a new unit cell
+        !                relative to the original unit cell)
+
+        ! site index --> site position      spos = self%sind_to_spos(sind)
+        ! site index --> site coordinates   scds = self%sind_to_scds(sind)
+        ! site index --> orbital index      oind = self%sind_to_oind(sind)
+        ! site index --> cell index         cind = self%sind_to_cind(sind)
+        ! site index --> all (subroutine with optional arguments) call self%sind_info(sind, pos, cds, oind, cind)
+        !
+        ! cell index  --> cell position     cpos = self%cind_to_cpos(cind)
+        ! cell index <--> cell coordinates  cind = self%ccds_to_cind(ccds) ccds = self%cind_to_ccds(cind)
+        !
+        ! orbital index + cell index       <--> site index    sind = self%cind_oind_to_sind(cind, oind)
+        !                                                     call self%sind_to_cind_oind(sind, cind, oind)
+        ! orbital index + cell coordinates <--> site index    sind = self%ccds
+        !
+        ! coordinates <--> position
+        !
+        ! 
+        !
+        ! cell index       + displacement --> new cell index
+        ! cell coordinates + displacement --> new cell index
+        !
+        ! site index + displacement --> new cell index
+        ! site index + to orbital index + displacement --> new site index
+        ! cell index + from orbital index + displacement --> new site index
+        !
+        !
+
         procedure :: siteindx_from_cellindx
         procedure :: siteindx_from_cellcoords
         procedure :: cellindx_from_siteindx
         procedure :: cellindx_from_coords
-        procedure :: cell_coordinatess_from_indx
+        procedure :: cind_to_ccds
 
         procedure :: cell_indx_displacement
-        procedure :: cell_displacement => cell_coordinate_displacement
+        procedure :: cell_displace_coords
 
         procedure :: add_bond
         procedure :: site_indx_displacement
@@ -115,27 +149,33 @@ module lattice_mod
             if (in_lattice) indxto = self%siteindx_from_cellindx(orbitalto, cellto)
         endsubroutine site_indx_displacement
 
-        subroutine cell_indx_displacement(self, indxfrom, dr, indxto, in_lattice)
+        subroutine cell_indx_displacement(self, cindfrom, dr, cindto, in_lattice)
+            !
+            ! L%cell_displace_indx()
+            !
             class(Lattice), intent(in)  :: self
-            integer       , intent(in)  :: indxfrom
+            integer       , intent(in)  :: cindfrom
             integer       , intent(in)  :: dr(self%dim)
-            integer       , intent(out) :: indxto
+            integer       , intent(out) :: cindto
             logical       , intent(out) :: in_lattice
 
-                integer :: rfrom(self%dim)
-                integer :: rto(self%dim)
+            integer :: rfrom(self%dim)
+            integer :: rto(self%dim)
 
-                rfrom = self%cell_coordinatess_from_indx(indxfrom)
+            rfrom = self%cind_to_ccds(cindfrom)
 
-                call self%cell_displacement(rfrom, dr, rto, in_lattice)
+            call self%cell_displace_coords(rfrom, dr, rto, in_lattice)
 
-                if (in_lattice) indxto = self%cellindx_from_coords(rto)
+            if (in_lattice) cindto = self%cellindx_from_coords(rto)
         endsubroutine cell_indx_displacement
 
-        subroutine cell_coordinate_displacement(self, rfrom, dr, rto, in_lattice)
+        subroutine cell_displace_coords(self, rfrom, dr, rto, in_lattice)
             ! Sets rto = rfrom + dr in lattice coordinates keeping track of periodicity.
             ! If rto is out of bounds for a non-periodic direction, in_lattice is set to .false.
             ! otherwise (rto is inside of the lattice) in_lattice is set to .true. .
+            !
+            ! L%cell_displace_coords([1, 2], [0, 1], r, in_lattice)
+            ! 
             class(Lattice), intent(in)  :: self
             integer       , intent(in)  :: rfrom(self%dim)
             integer       , intent(in)  :: dr(self%dim)
@@ -158,22 +198,23 @@ module lattice_mod
                     endif
                 enddo
             endassociate
-        endsubroutine cell_coordinate_displacement
-
-        function cell_coordinatess_from_indx(self, cellindx) result(r)
+        endsubroutine cell_displace_coords
+        ! cind = self%ccds_to_cind(ccds)
+        ! ccds = self%cind_to_ccds(cind)
+        function cind_to_ccds(self, cind) result(ccds)
             class(Lattice), intent(in) :: self
-            integer, intent(in) :: cellindx
+            integer, intent(in) :: cind
 
-            integer :: r(self%dim)
+            integer :: ccds(self%dim)
             integer :: i, n
 
-            n = cellindx - 1
+            n = cind - 1
 
             do i = 1, self%dim
-                r(i) = modulo(n, self%L(i))
+                ccds(i) = modulo(n, self%L(i))
                 n = n / self%L(i)
             enddo
-        endfunction cell_coordinatess_from_indx
+        endfunction cind_to_ccds
 
 
 
@@ -271,53 +312,53 @@ module lattice_mod
             U%dim = dim
             U%norbitals = 0
             U%V = 0.0_dp
-            allocate(U%lattice_vectors(dim, dim))
-            U%lattice_vectors = 0.0_dp
+            allocate(U%lvecs(dim, dim))
+            U%lvecs = 0.0_dp
         endfunction new_unitcell
 
-        subroutine set_lattice_vector(self, i, a)
+        subroutine set_lvec(self, i, a)
             class(UnitCell), intent(inout) :: self
             integer        , intent(in)    :: i
             real(dp)       , intent(in)    :: a(:)
 
-            associate(dim => self%dim, lattice_vectors => self%lattice_vectors)
+            associate(dim => self%dim, lvecs => self%lvecs)
                 ! Make sure the dimension of a matches the dimension of the UnitCell.
-                if (size(a) .ne. dim) stop "error stop in procedure set_lattice_vector from module lattice_mod: mismatch in UnitCell and input lattice vector dimension."
+                if (size(a) .ne. dim) stop "error stop in procedure set_lvec from module lattice_mod: mismatch in UnitCell and input lattice vector dimension."
                 ! Make sure i is between 1 and dim.
-                if ((i .le. 0) .or. (i .gt. dim)) error stop "error stop in procedure set_lattice_vector from module lattice_mod: attempting to set lattice vector index out of range of UnitCell dimension."
-                lattice_vectors(:, i) = a
+                if ((i .le. 0) .or. (i .gt. dim)) error stop "error stop in procedure set_lvec from module lattice_mod: attempting to set lattice vector index out of range of UnitCell dimension."
+                lvecs(:, i) = a
             endassociate
-        endsubroutine set_lattice_vector
+        endsubroutine set_lvec
 
-        function lattice_vector(self, i) result(a)
+        function lvec(self, i) result(a)
             class(UnitCell), intent(in) :: self
             integer        , intent(in) :: i
 
             real(dp) :: a(self%dim)
 
-            associate(dim => self%dim, lattice_vectors => self%lattice_vectors)
+            associate(dim => self%dim, lvecs => self%lvecs)
                 ! Make sure i is between 1 and dim.
-                if ((i .le. 0) .or. (i .gt. dim)) error stop "error stop in procedure lattice_vector from module lattice_mod: attempting to access lattice vector index out of range of UnitCell dimension."
-                a = lattice_vectors(:, i)
+                if ((i .le. 0) .or. (i .gt. dim)) error stop "error stop in procedure lvec from module lattice_mod: attempting to access lattice vector index out of range of UnitCell dimension."
+                a = lvecs(:, i)
             endassociate
-        endfunction lattice_vector
+        endfunction lvec
 
         !> Get the `i`th reciprocal lattice vector of the unit cell.
         !!
         !! @param[in] self Unit cell to get reciprocal lattice vector of.
         !! @param[in] i index of reciprocal lattice vector to get.
-        function reciprocal_vector(self, i) result(b)
+        function rvec(self, i) result(b)
             class(UnitCell), intent(in) :: self
             integer        , intent(in) :: i
 
             real(dp) :: b(self%dim)
 
-            associate(dim => self%dim, reciprocal_vectors => self%reciprocal_vectors)
+            associate(dim => self%dim, rvecs => self%rvecs)
                 ! Make sure i is between 1 and dim.
-                if ((i .le. 0) .or. (i .gt. dim)) error stop "error stop in procedure reciprocal_vector from module lattice_mod: attempting to access lattice vector index out of range of UnitCell dimension."
-                b = reciprocal_vectors(:, i)
+                if ((i .le. 0) .or. (i .gt. dim)) error stop "error stop in procedure rvec from module lattice_mod: attempting to access lattice vector index out of range of UnitCell dimension."
+                b = rvecs(:, i)
             endassociate
-        endfunction reciprocal_vector
+        endfunction rvec
 
         !> Adds an orbital to the unit cell at the specified position.
         !!
@@ -366,24 +407,24 @@ module lattice_mod
             c(3) = a(1)*b(2) - a(2)*b(1)
         endfunction cross_product
 
-        subroutine make_reciprocal_vectors(self)
+        subroutine make_rvecs(self)
             class(UnitCell), intent(inout) :: self
 
-            associate (dim => self%dim, lattice_vectors => self%lattice_vectors, V => self%V)
-                if (allocated(self%reciprocal_vectors)) deallocate(self%reciprocal_vectors)
-                allocate(self%reciprocal_vectors, mold=lattice_vectors)
+            associate (dim => self%dim, lvecs => self%lvecs, V => self%V)
+                if (allocated(self%rvecs)) deallocate(self%rvecs)
+                allocate(self%rvecs, mold=lvecs)
 
                 selectcase (dim)
 
                     case (1)
-                        associate(a1 => lattice_vectors(:, 1), b1 => self%reciprocal_vectors(:, 1))
+                        associate(a1 => lvecs(:, 1), b1 => self%rvecs(:, 1))
                             V = a1(1)
                             b1 = 2.0_dp * pi * a1 / dot_product(a1, a1)
                         endassociate
 
                     case (2)
-                        associate(a1 => lattice_vectors(:, 1), b1 => self%reciprocal_vectors(:, 1),   &
-                                  a2 => lattice_vectors(:, 2), b2 => self%reciprocal_vectors(:, 2))
+                        associate(a1 => lvecs(:, 1), b1 => self%rvecs(:, 1),   &
+                                  a2 => lvecs(:, 2), b2 => self%rvecs(:, 2))
                             V = dot_product(a1, twodim_90degree_rotation(a2))
                             b1 = 2.0_dp * pi * twodim_90degree_rotation(a2) /   &
                                  dot_product(a1, twodim_90degree_rotation(a2))
@@ -392,9 +433,9 @@ module lattice_mod
                         endassociate
 
                     case (3)
-                        associate(a1 => lattice_vectors(:, 1), b1 => self%reciprocal_vectors(:, 1),   &
-                                  a2 => lattice_vectors(:, 2), b2 => self%reciprocal_vectors(:, 2),   &
-                                  a3 => lattice_vectors(:, 3), b3 => self%reciprocal_vectors(:, 3))
+                        associate(a1 => lvecs(:, 1), b1 => self%rvecs(:, 1),   &
+                                  a2 => lvecs(:, 2), b2 => self%rvecs(:, 2),   &
+                                  a3 => lvecs(:, 3), b3 => self%rvecs(:, 3))
                             V = dot_product(a1, cross_product(a2, a3))
                             b1 = (2.0_dp * pi / V) * cross_product(a2, a3)
                             b2 = (2.0_dp * pi / V) * cross_product(a3, a1)
@@ -404,7 +445,7 @@ module lattice_mod
                 endselect
 
             endassociate
-        endsubroutine make_reciprocal_vectors
+        endsubroutine make_rvecs
 
         !> Appends a column to the @c real(dp) matrix @p A
         !!
