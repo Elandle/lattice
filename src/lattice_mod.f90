@@ -10,9 +10,19 @@
 !
 !
 module lattice_mod
-    use iso_fortran_env, only: dp => real64
+    use iso_fortran_env, only: real64
     implicit none
+    private
 
+    public :: UnitCell
+    public :: Bond
+    public :: Lattice
+    
+    public :: new_unitcell
+    public :: new_bond
+    public :: new_lattice
+
+    integer , parameter :: dp = real64
     real(dp), parameter :: pi = 4.0_dp * atan(1.0_dp)
 
     type :: UnitCell
@@ -83,40 +93,34 @@ module lattice_mod
         !                because these are typically only unit cell to unit cell
         !                and that eliminates needing to do nearest-to-real searching).
         !
-
+        procedure :: cind_to_ccds
+        procedure :: cind_to_cpos
         procedure :: cind_sorb_to_sind
-        procedure :: ccds_sorb_to_sind
-
-        procedure :: sind_to_cind
-        procedure :: sind_to_oind
-        procedure :: sind_to_cind_oind
-        procedure :: sind_info
+        procedure :: cind_cdsp_to_cind
+        procedure :: cind_cdsp_sorb_to_sind
 
         procedure :: ccds_to_cind
-        procedure :: cind_to_ccds
+        procedure :: ccds_sorb_to_sind
+        procedure :: ccds_cdsp_to_cind
+        procedure :: ccds_cdsp_to_ccds
 
         procedure :: sind_to_scds
         procedure :: sind_to_spos
-        procedure :: cind_to_cpos
-
-        procedure :: cind_cdsp_to_cind
-        procedure :: cds_dsp_to_cds
-
-        procedure :: add_bond
+        procedure :: sind_to_cind
+        procedure :: sind_to_oind
+        procedure :: sind_to_cind_oind
         procedure :: sind_cdsp_sorb_to_sind
+        procedure :: sind_cdsp_to_cind
+        procedure :: sind_info
 
+        procedure :: cds_dsp_to_cds
         procedure :: cds_to_pos_dp
         procedure :: cds_to_pos_int
+        generic   :: cds_to_pos => cds_to_pos_dp, cds_to_pos_int
+
         procedure :: pos_to_cds
 
-        generic :: cds_to_pos => cds_to_pos_dp, cds_to_pos_int
-
-        procedure :: ccds_cdsp_to_cind
-        procedure :: sind_cdsp_to_cind
-        procedure :: ccds_cdsp_to_ccds
-
-
-        procedure :: cind_cdsp_sorb_to_sind
+        procedure :: add_bond
     endtype Lattice
 
     interface append_column
