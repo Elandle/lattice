@@ -1,6 +1,14 @@
 !
 ! gfortran -c -ffree-line-length-none lattice_mod.f90
 !
+! Todo:
+! Make set_lvec accept real or integer vectors.
+! Automatically construct reciprocal lattice vectors once
+! all lattice vectors are set (and automatically update if changed).
+!
+!
+!
+!
 module lattice_mod
     use iso_fortran_env, only: dp => real64
     implicit none
@@ -105,6 +113,7 @@ module lattice_mod
 
         procedure :: ccds_cdsp_to_cind
         procedure :: sind_cdsp_to_cind
+        procedure :: ccds_cdsp_to_ccds
 
 
         procedure :: cind_cdsp_sorb_to_sind
@@ -115,6 +124,15 @@ module lattice_mod
     endinterface append_column
 
     contains
+        subroutine ccds_cdsp_to_ccds(self, ccdsfr, cdsp, ccdsto, in_lattice)
+            class(Lattice), intent(in)  :: self
+            integer       , intent(in)  :: ccdsfr(self%dim)
+            integer       , intent(in)  :: cdsp(self%dim)
+            integer       , intent(out) :: ccdsto(self%dim)
+            logical       , intent(out) :: in_lattice
+
+            call self%cds_dsp_to_cds(ccdsfr, cdsp, ccdsto, in_lattice)
+        endsubroutine ccds_cdsp_to_ccds
 
         function cds_to_pos_dp(self, cds) result(pos)
             class(Lattice), intent(in) :: self
