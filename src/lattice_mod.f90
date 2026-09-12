@@ -12,9 +12,9 @@ module lattice_mod
         integer  :: norbitals ! Number of orbitals in the unit cell
         real(dp) :: V         ! Volume of the unit cell
 
-        real(dp), allocatable :: lvecs(:, :)   ! Lattice vectors
+        real(dp), allocatable :: lvecs(:, :)             ! Lattice vectors
         real(dp), allocatable :: orbital_positions(:, :) ! Orbital positions
-        real(dp), allocatable :: rvecs(:, :) ! Reciprocal lattice vectors
+        real(dp), allocatable :: rvecs(:, :)             ! Reciprocal lattice vectors
 
         contains
             procedure set_lvec
@@ -26,10 +26,10 @@ module lattice_mod
 
     type :: Bond
         integer :: to   ! Orbital index the bond is to.
-        integer :: from ! Orbital index the bond is from.   
+        integer :: fr   ! Orbital index the bond is from.   
 
-        integer, allocatable :: displacement(:) ! Unit cell displacement.
-                                                ! Measured in terms of lattice vectors.
+        integer, allocatable :: dsp(:) ! Unit cell displacement.
+                                       ! Measured in terms of lattice vectors.
     endtype Bond
 
     type :: Hopping
@@ -56,50 +56,58 @@ module lattice_mod
 
     contains
         !
+        ! ind = index
+        ! cds = coordinates (in lattice vector basis)
+        ! pos = position (in Cartesian basis)
+        ! orb = orbital
+        ! s prefix = site
+        ! c prefix = unit cell
+        ! fr suffix = from
+        ! to suffix = to
+        !
+        !
         ! position = Cartestian position
         ! coordinates = lattice vector coordinates (integers for cells, reals for sites)
-        ! displacement = lattice vector coordinate displacement only using integers,
-        !                goes from unit cell to unit cell (eg, site + displacement means
-        !                find the unit cell the site is in and displace to a new unit cell
-        !                relative to the original unit cell)
-
-        ! site index --> site position      spos = self%sind_to_spos(sind)
-        ! site index --> site coordinates   scds = self%sind_to_scds(sind)
-        ! site index --> orbital index      oind = self%sind_to_oind(sind)
-        ! site index --> cell index         cind = self%sind_to_cind(sind)
-        ! site index --> all (subroutine with optional arguments) call self%sind_info(sind, pos, cds, oind, cind)
-        !
-        ! cell index  --> cell position     cpos = self%cind_to_cpos(cind)
-        ! cell index <--> cell coordinates  cind = self%ccds_to_cind(ccds) ccds = self%cind_to_ccds(cind)
-        !
-        ! orbital index + cell index       <--> site index    sind = self%cind_oind_to_sind(cind, oind)
-        !                                                     call self%sind_to_cind_oind(sind, cind, oind)
-        ! orbital index + cell coordinates <--> site index    sind = self%ccds
-        !
-        ! coordinates <--> position
-        !
-        ! 
-        !
-        ! cell index       + displacement --> new cell index
-        ! cell coordinates + displacement --> new cell index
-        !
-        ! site index + displacement --> new cell index
-        ! site index + to orbital index + displacement --> new site index
-        ! cell index + from orbital index + displacement --> new site index
-        !
+        ! displacement = lattice vector coordinate displacement, goes from unit cell to 
+        !                unit cell (eg, site + displacement means find the unit cell the
+        !                site is in and displace to a new unit cell relative to the
+        !                original unit cell. Usually only allowed to have integers
+        !                because these are typically only unit cell to unit cell
+        !                and that eliminates needing to do nearest-to-real searching).
         !
 
-        procedure :: siteindx_from_cellindx
-        procedure :: siteindx_from_cellcoords
-        procedure :: cellindx_from_siteindx
-        procedure :: cellindx_from_coords
+        procedure :: cind_sorb_to_sind
+        procedure :: ccds_sorb_to_sind
+
+        procedure :: sind_to_cind
+        procedure :: sind_to_oind
+        procedure :: sind_to_cind_oind
+        procedure :: sind_info
+
+        procedure :: ccds_to_cind
         procedure :: cind_to_ccds
 
-        procedure :: cell_indx_displacement
-        procedure :: cell_displace_coords
+        procedure :: sind_to_scds
+        procedure :: sind_to_spos
+        procedure :: cind_to_cpos
+
+        procedure :: cind_cdsp_to_cind
+        procedure :: cds_dsp_to_cds
 
         procedure :: add_bond
-        procedure :: site_indx_displacement
+        procedure :: sind_cdsp_sorb_to_sind
+
+        procedure :: cds_to_pos_dp
+        procedure :: cds_to_pos_int
+        procedure :: pos_to_cds
+
+        generic :: cds_to_pos => cds_to_pos_dp, cds_to_pos_int
+
+        procedure :: ccds_cdsp_to_cind
+        procedure :: sind_cdsp_to_cind
+
+
+        procedure :: cind_cdsp_sorb_to_sind
     endtype Lattice
 
     interface append_column
@@ -107,6 +115,167 @@ module lattice_mod
     endinterface append_column
 
     contains
+
+        function cds_to_pos_dp(self, cds) result(pos)
+            class(Lattice), intent(in) :: self
+            real(dp)      , intent(in) :: cds(self%dim)
+
+            real(dp) :: pos(self%dim)
+
+            pos = matmul(self%U%lvecs, cds)
+        endfunction cds_to_pos_dp
+
+        function cds_to_pos_int(self, cds) result(pos)
+            class(Lattice), intent(in) :: self
+            integer       , intent(in) :: cds(self%dim)
+
+            real(dp) :: pos(self%dim)
+
+            pos = self%cds_to_pos_dp(real(cds, dp))
+        endfunction cds_to_pos_int
+
+        subroutine ccds_cdsp_to_cind(self, ccdsfr, cdsp, cindto, in_lattice)
+            class(Lattice), intent(in)  :: self
+            integer       , intent(in)  :: ccdsfr(self%dim)
+            integer       , intent(in)  :: cdsp(self%dim)
+            integer       , intent(out) :: cindto
+            logical       , intent(out) :: in_lattice
+
+            integer :: ccdsto(self%dim)
+
+            call self%cds_dsp_to_cds(ccdsfr, cdsp, ccdsto, in_lattice)
+
+            if (in_lattice) cindto = self%ccds_to_cind(ccdsto)
+        endsubroutine ccds_cdsp_to_cind
+
+        subroutine sind_cdsp_to_cind(self, sindfr, cdsp, cindto, in_lattice)
+            class(Lattice), intent(in)  :: self
+            integer       , intent(in)  :: sindfr
+            integer       , intent(in)  :: cdsp(self%dim)
+            integer       , intent(out) :: cindto
+            logical       , intent(out) :: in_lattice
+
+            integer :: cindfr
+
+            cindfr = self%sind_to_cind(sindfr)
+
+            call self%cind_cdsp_to_cind(cindfr, cdsp, cindto, in_lattice)
+        endsubroutine sind_cdsp_to_cind
+
+        subroutine cind_cdsp_sorb_to_sind(self, cindfr, cdsp, sorbto, sindto, in_lattice)
+            class(Lattice), intent(in)  :: self
+            integer       , intent(in)  :: cindfr
+            integer       , intent(in)  :: cdsp(self%dim)
+            integer       , intent(in)  :: sorbto
+            integer       , intent(out) :: sindto
+            logical       , intent(out) :: in_lattice
+
+            integer :: cindto
+
+            call self%cind_cdsp_to_cind(cindfr, cdsp, cindto, in_lattice)
+
+            if (in_lattice) sindto = self%cind_sorb_to_sind(sorbto, cindto)
+        endsubroutine cind_cdsp_sorb_to_sind
+
+        function pos_to_cds(self, pos) result(cds)
+            class(Lattice), intent(in) :: self
+            real(dp)      , intent(in) :: pos(self%dim)
+
+            real(dp) :: cds(self%dim)
+
+            integer :: i
+
+            if (.not. allocated(self%U%rvecs)) then
+                error stop "error stop in procedure pos_to_cds from module lattice_mod: reciprocal lattice vectors have not been made before calling."
+            endif
+
+            do i = 1, self%dim
+                cds(i) = dot_product(pos, self%U%rvecs(:, i)) / (2.0_dp * pi)
+            enddo
+        endfunction pos_to_cds
+
+        function sind_to_oind(self, sind) result(oind)
+            class(Lattice), intent(in) :: self
+            integer       , intent(in) :: sind
+
+            integer :: oind
+
+            oind = modulo(sind - 1, self%U%norbitals) + 1
+        endfunction sind_to_oind
+
+        subroutine sind_to_cind_oind(self, sind, cind, oind)
+            class(Lattice), intent(in)  :: self
+            integer       , intent(in)  :: sind
+            integer       , intent(out) :: cind
+            integer       , intent(out) :: oind
+
+            cind = self%sind_to_cind(sind)
+            oind = self%sind_to_oind(sind)
+        endsubroutine sind_to_cind_oind
+
+        subroutine sind_info(self, sind, pos, cds, oind, cind)
+            class(Lattice), intent(in) :: self
+            integer       , intent(in) :: sind
+
+            real(dp), intent(out), optional :: pos(self%dim)
+            real(dp), intent(out), optional :: cds(self%dim)
+            integer , intent(out), optional :: oind
+            integer , intent(out), optional :: cind
+
+            integer  :: cindtemp, oindtemp
+            integer  :: ccds(self%dim)
+            real(dp) :: scds(self%dim)
+
+            call self%sind_to_cind_oind(sind, cindtemp, oindtemp)
+
+            if (present(cind)) cind = cindtemp
+            if (present(oind)) oind = oindtemp
+
+            if (present(cds) .or. present(pos)) then
+                ccds = self%cind_to_ccds(cindtemp)
+                scds = real(ccds, dp) + self%U%orbital_positions(:, oindtemp)
+
+                if (present(cds)) cds = scds
+                if (present(pos)) pos = self%cds_to_pos(scds)
+            endif
+        endsubroutine sind_info
+
+        function sind_to_scds(self, sind) result(scds)
+            class(Lattice), intent(in) :: self
+            integer       , intent(in) :: sind
+
+            real(dp) :: scds(self%dim)
+            integer  :: cind, oind
+            integer  :: ccds(self%dim)
+
+            call self%sind_to_cind_oind(sind, cind, oind)
+            ccds = self%cind_to_ccds(cind)
+            scds = real(ccds, dp) + self%U%orbital_positions(:, oind)
+        endfunction sind_to_scds
+
+        function sind_to_spos(self, sind) result(spos)
+            class(Lattice), intent(in) :: self
+            integer       , intent(in) :: sind
+
+            real(dp) :: spos(self%dim)
+            real(dp) :: scds(self%dim)
+
+            scds = self%sind_to_scds(sind)
+            spos = self%cds_to_pos(scds)
+        endfunction sind_to_spos
+
+        function cind_to_cpos(self, cind) result(cpos)
+            class(Lattice), intent(in) :: self
+            integer       , intent(in) :: cind
+
+            real(dp) :: cpos(self%dim)
+            integer  :: ccds(self%dim)
+            real(dp) :: cds(self%dim)
+
+            ccds = self%cind_to_ccds(cind)
+            cds  = real(ccds, dp)
+            cpos = self%cds_to_pos(cds)
+        endfunction cind_to_cpos
 
         !> Adds a bond to the lattice.
         !!
@@ -134,73 +303,62 @@ module lattice_mod
             self%nbonds = self%nbonds + 1
         endsubroutine add_bond
 
-        subroutine site_indx_displacement(self, indxfrom, dr, orbitalto, indxto, in_lattice)
+        subroutine sind_cdsp_sorb_to_sind(self, sindfr, cdsp, sorbto, sindto, in_lattice)
             class(Lattice), intent(in)  :: self
-            integer       , intent(in)  :: indxfrom
-            integer       , intent(in)  :: dr(self%dim)
-            integer       , intent(in)  :: orbitalto
-            integer       , intent(out) :: indxto
+            integer       , intent(in)  :: sindfr
+            integer       , intent(in)  :: cdsp(self%dim)
+            integer       , intent(in)  :: sorbto
+            integer       , intent(out) :: sindto
             logical       , intent(out) :: in_lattice
 
-            integer :: cellfrom, cellto
+            integer :: cindfr, cindto
 
-            cellfrom = self%cellindx_from_siteindx(indxfrom)
-            call self%cell_indx_displacement(cellfrom, dr, cellto, in_lattice)
-            if (in_lattice) indxto = self%siteindx_from_cellindx(orbitalto, cellto)
-        endsubroutine site_indx_displacement
+            cindfr = self%sind_to_cind(sindfr)
+            call self%cind_cdsp_to_cind(cindfr, cdsp, cindto, in_lattice)
+            if (in_lattice) sindto = self%cind_sorb_to_sind(sorbto, cindto)
+        endsubroutine sind_cdsp_sorb_to_sind
 
-        subroutine cell_indx_displacement(self, cindfrom, dr, cindto, in_lattice)
-            !
-            ! L%cell_displace_indx()
-            !
+        subroutine cind_cdsp_to_cind(self, cindfr, cdsp, cindto, in_lattice)
             class(Lattice), intent(in)  :: self
-            integer       , intent(in)  :: cindfrom
-            integer       , intent(in)  :: dr(self%dim)
+            integer       , intent(in)  :: cindfr
+            integer       , intent(in)  :: cdsp(self%dim)
             integer       , intent(out) :: cindto
             logical       , intent(out) :: in_lattice
 
-            integer :: rfrom(self%dim)
-            integer :: rto(self%dim)
+            integer :: ccdsfr(self%dim)
+            integer :: ccdsto(self%dim)
 
-            rfrom = self%cind_to_ccds(cindfrom)
+            ccdsfr = self%cind_to_ccds(cindfr)
+            call self%cds_dsp_to_cds(ccdsfr, cdsp, ccdsto, in_lattice)
+            if (in_lattice) cindto = self%ccds_to_cind(ccdsto)
+        endsubroutine cind_cdsp_to_cind
 
-            call self%cell_displace_coords(rfrom, dr, rto, in_lattice)
-
-            if (in_lattice) cindto = self%cellindx_from_coords(rto)
-        endsubroutine cell_indx_displacement
-
-        subroutine cell_displace_coords(self, rfrom, dr, rto, in_lattice)
-            ! Sets rto = rfrom + dr in lattice coordinates keeping track of periodicity.
-            ! If rto is out of bounds for a non-periodic direction, in_lattice is set to .false.
-            ! otherwise (rto is inside of the lattice) in_lattice is set to .true. .
-            !
-            ! L%cell_displace_coords([1, 2], [0, 1], r, in_lattice)
-            ! 
+        
+        subroutine cds_dsp_to_cds(self, cdsfr, dsp, cdsto, in_lattice)
             class(Lattice), intent(in)  :: self
-            integer       , intent(in)  :: rfrom(self%dim)
-            integer       , intent(in)  :: dr(self%dim)
-            integer       , intent(out) :: rto(self%dim)
+            integer       , intent(in)  :: cdsfr(self%dim)
+            integer       , intent(in)  :: dsp(self%dim)
+            integer       , intent(out) :: cdsto(self%dim)
             logical       , intent(out) :: in_lattice
 
             integer :: i
 
             associate (dim => self%dim, L => self%L, periodic => self%periodic)
 
-                rto = rfrom + dr
+                cdsto = cdsfr + dsp
                 in_lattice = .true.
 
                 do i = 1, dim
                     if (periodic(i)) then
-                        rto(i) = modulo(rto(i), L(i))
-                    elseif ((rto(i) .lt. 0) .or. (rto(i) .ge. L(i))) then
+                        cdsto(i) = modulo(cdsto(i), L(i))
+                    elseif ((cdsto(i) .lt. 0) .or. (cdsto(i) .ge. L(i))) then
                         in_lattice = .false.
                         return
                     endif
                 enddo
             endassociate
-        endsubroutine cell_displace_coords
-        ! cind = self%ccds_to_cind(ccds)
-        ! ccds = self%cind_to_ccds(cind)
+        endsubroutine cds_dsp_to_cds
+
         function cind_to_ccds(self, cind) result(ccds)
             class(Lattice), intent(in) :: self
             integer, intent(in) :: cind
@@ -216,9 +374,6 @@ module lattice_mod
             enddo
         endfunction cind_to_ccds
 
-
-
-
         function new_lattice(U, L, periodic) result(Lat)
             type(UnitCell), intent(in) :: U
             integer       , intent(in) :: L(:)
@@ -228,80 +383,85 @@ module lattice_mod
 
             integer :: i
 
+            ! Check that the provided L extent matches the dimension of the unit cell.
+            if (size(L) .ne. U%dim) then
+                error stop "error stop in procedure new_lattice from module lattice_mod: lattice L extent dimension does not match UnitCell dimension."
+            endif
 
-            Lat%U = U
-            Lat%L = L
+            ! Check that the provided periodic extent matches the dimension of L (which matches the dimension of the unit cell).
+            if (size(periodic) .ne. size(L)) then
+                error stop "error stop in procedure new_lattice from module lattice_mod: lattice periodic dimension does not match lattice L extent dimension."
+            endif
+
+            Lat%U        = U
+            Lat%L        = L
             Lat%periodic = periodic
-            Lat%dim = size(L)
+            Lat%dim      = size(L)
 
             Lat%ncells = 1
             do i = 1, Lat%dim
                 Lat%ncells = Lat%ncells * L(i)
             enddo
+
             Lat%nsites = Lat%ncells * U%norbitals
+            Lat%nbonds = 0
         endfunction new_lattice
 
-        function siteindx_from_cellindx(self, orbital, cellindx) result(siteindx)
-            ! Index of a site given its orbital number and the index of the unit cell it is in.
+        function cind_sorb_to_sind(self, sorb, cind) result(sind)
             class(Lattice), intent(in) :: self
-            integer      , intent(in) :: orbital
-            integer      , intent(in) :: cellindx
+            integer      , intent(in) :: sorb
+            integer      , intent(in) :: cind
 
-            integer :: siteindx
+            integer :: sind
 
-            siteindx = orbital + self%U%norbitals * (cellindx - 1)
-        endfunction siteindx_from_cellindx
+            sind = sorb + self%U%norbitals * (cind - 1)
+        endfunction cind_sorb_to_sind
 
-        function siteindx_from_cellcoords(self, orbital, r) result(siteindx)
-            ! Index of a site given its orbital number and the coordinates of the unit cell it is in.
+        function ccds_sorb_to_sind(self, ccds, sorb) result(sind)
             class(Lattice), intent(in) :: self
-            integer      , intent(in) :: orbital
-            integer      , intent(in) :: r(:)
+            integer       , intent(in) :: ccds(self%dim)
+            integer       , intent(in) :: sorb
+            
+            integer :: sind, cind
 
-            integer :: siteindx
-            integer :: cellindx
+            cind = self%ccds_to_cind(ccds)
+            sind = self%cind_sorb_to_sind(sorb, cind)
+        endfunction ccds_sorb_to_sind
 
-            cellindx = self%cellindx_from_coords(r)
-            siteindx = self%siteindx_from_cellindx(orbital, cellindx)
-        endfunction siteindx_from_cellcoords
-
-        function cellindx_from_siteindx(self, siteindx) result(cellindx)
-            ! Index of the unit cell a site is in.
+        function sind_to_cind(self, sind) result(cind)
             class(Lattice), intent(in) :: self
-            integer      , intent(in) :: siteindx
+            integer      , intent(in) :: sind
 
-            integer :: cellindx
+            integer :: cind
 
-            cellindx = (siteindx - 1) / self%U%norbitals+1
-        endfunction cellindx_from_siteindx
+            cind = (sind - 1) / self%U%norbitals+1
+        endfunction sind_to_cind
 
-        function cellindx_from_coords(self, r) result(cellindx)
-            ! Index of a unit cell at a specified coordinate.
+        function ccds_to_cind(self, ccds) result(cind)
             class(Lattice), intent(in) :: self
-            integer      , intent(in) :: r(:)
+            integer       , intent(in) :: ccds(:)
 
-            integer :: cellindx
+            integer :: cind
             integer :: i, strider
             associate(dim => self%dim, L => self%L)
-                cellindx = 1 ; strider = 1
+                cind = 1 ; strider = 1
                 do i = 1, dim
-                    cellindx = cellindx + r(i) * strider
+                    cind = cind + ccds(i) * strider
                     strider = strider * L(i)
                 enddo
             endassociate
-        endfunction cellindx_from_coords
+        endfunction ccds_to_cind
 
-
-        function new_bond(to, from, displacement) result(B)
+        function new_bond(to, fr, dsp) result(B)
             integer, intent(in) :: to
-            integer, intent(in) :: from
-            integer, intent(in) :: displacement(:)
+            integer, intent(in) :: fr
+            integer, intent(in) :: dsp(:)
 
             type(Bond) :: B
 
             B%to = to
-            B%from = from
-            B%displacement = displacement
+            B%fr = fr
+            B%dsp = dsp
         endfunction new_bond
 
         function new_unitcell(dim) result(U)
