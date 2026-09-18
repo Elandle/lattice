@@ -43,17 +43,17 @@ module lattice_mod
     endtype UnitCell
 
     type :: Bond
-        integer :: to   ! Orbital index the bond is to.
-        integer :: fr   ! Orbital index the bond is from.   
+        integer :: orbto   ! Orbital index the bond is to.
+        integer :: orbfr   ! Orbital index the bond is from.   
 
-        integer, allocatable :: dsp(:) ! Unit cell displacement.
+        integer, allocatable :: cdsp(:) ! Unit cell displacement.
                                        ! Measured in terms of lattice vectors.
     endtype Bond
 
     type :: Hopping
         type(Bond)  :: B
-        complex(dp) :: t_to   ! Hopping from  ---  t_to   ---> to
-        complex(dp) :: t_from ! Hopping from <--- t_from  ---  to
+        complex(dp) :: tto   ! Hopping from  ---  t_to   ---> to
+        complex(dp) :: tfr ! Hopping from <--- t_from  ---  to
 
         ! Internally store hoppings as complex numbers, then check later on if they are real or complex
         logical :: iscomplex
@@ -325,6 +325,19 @@ module lattice_mod
             self%nbonds = self%nbonds + 1
         endsubroutine add_bond
 
+        function lattice_new_bond(self, orbto, orbfr, cdsp) result(bind)
+            class(Lattice), intent(inout) :: self
+            integer       , intent(in)    :: orbto
+            integer       , intent(in)    :: orbfr
+            integer       , intent(in)    :: cdsp(self%dim)
+
+            integer :: bind
+
+            call add
+
+
+        endfunction lattice_new_bond
+
         subroutine sind_cdsp_sorb_to_sind(self, sindfr, cdsp, sorbto, sindto, in_lattice)
             class(Lattice), intent(in)  :: self
             integer       , intent(in)  :: sindfr
@@ -474,16 +487,16 @@ module lattice_mod
             endassociate
         endfunction ccds_to_cind
 
-        function new_bond(to, fr, dsp) result(B)
-            integer, intent(in) :: to
-            integer, intent(in) :: fr
-            integer, intent(in) :: dsp(:)
+        function new_bond(orbto, orbfr, cdsp) result(B)
+            integer, intent(in) :: orbto
+            integer, intent(in) :: orbfr
+            integer, intent(in) :: cdsp(:)
 
             type(Bond) :: B
 
-            B%to = to
-            B%fr = fr
-            B%dsp = dsp
+            B%orbto = orbto
+            B%orbfr = orbfr
+            B%cdsp  = cdsp
         endfunction new_bond
 
         function new_unitcell(dim) result(U)
